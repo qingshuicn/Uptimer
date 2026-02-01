@@ -5,8 +5,12 @@ import { getDb, monitors } from '@uptimer/db';
 
 import type { Env } from '../env';
 import { AppError } from '../middleware/errors';
+import { cachePublic } from '../middleware/cache-public';
 
 export const publicRoutes = new Hono<{ Bindings: Env }>();
+
+// Cache public endpoints at the edge to improve performance on slow networks.
+publicRoutes.use('*', cachePublic({ cacheName: 'uptimer-public', maxAgeSeconds: 30 }));
 
 type PublicStatusMonitorRow = {
   id: number;
