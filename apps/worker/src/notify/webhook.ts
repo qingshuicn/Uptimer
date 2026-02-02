@@ -204,7 +204,7 @@ export async function dispatchWebhookToChannel(args: {
         if (canHaveBody) {
           rawBody = new URLSearchParams(params).toString();
           if (!headers.has('content-type')) {
-            headers.set('Content-Type', 'application/x-www-form-urlencoded; charset=utf-8');
+            headers.set('Content-Type', 'application/x-www-form-urlencoded');
           }
         } else {
           // Cannot send a body (GET/HEAD). Fall back to query params.
@@ -217,7 +217,8 @@ export async function dispatchWebhookToChannel(args: {
         if (canHaveBody) {
           rawBody = JSON.stringify(payload === undefined ? null : payload);
           if (!headers.has('content-type')) {
-            headers.set('Content-Type', 'application/json; charset=utf-8');
+            // Some webhook receivers (e.g. Apprise wrappers) strictly require an exact content-type value.
+            headers.set('Content-Type', 'application/json');
           }
         }
         break;
