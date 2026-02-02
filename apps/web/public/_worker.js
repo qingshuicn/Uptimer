@@ -68,9 +68,13 @@ function statusBadgeClass(status) {
 function renderPreload(snapshot) {
   const overall = typeof snapshot.overall_status === 'string' ? snapshot.overall_status : 'unknown';
   const bannerTitle =
-    snapshot && snapshot.banner && typeof snapshot.banner.title === 'string' ? snapshot.banner.title : 'Status';
+    snapshot && snapshot.banner && typeof snapshot.banner.title === 'string'
+      ? snapshot.banner.title
+      : 'Status';
   const generatedAt =
-    typeof snapshot.generated_at === 'number' ? snapshot.generated_at : Math.floor(Date.now() / 1000);
+    typeof snapshot.generated_at === 'number'
+      ? snapshot.generated_at
+      : Math.floor(Date.now() / 1000);
 
   const monitors = Array.isArray(snapshot.monitors) ? snapshot.monitors : [];
 
@@ -82,7 +86,9 @@ function renderPreload(snapshot) {
       const status = typeof m.status === 'string' ? m.status : 'unknown';
       const lastCheckedAt = typeof m.last_checked_at === 'number' ? m.last_checked_at : null;
 
-      const lastChecked = lastCheckedAt ? `Last checked: ${escapeHtml(formatTime(lastCheckedAt))}` : 'Never checked';
+      const lastChecked = lastCheckedAt
+        ? `Last checked: ${escapeHtml(formatTime(lastCheckedAt))}`
+        : 'Never checked';
 
       return `
         <div class="bg-white rounded-xl border border-slate-100 shadow-soft p-4">
@@ -129,6 +135,22 @@ function renderPreload(snapshot) {
   `;
 }
 
+async function fetchIndexHtml(env, url) {
+  const indexUrl = new URL('/index.html', url);
+
+  // Do not pass the original navigation request as init. In Pages runtime the
+  // navigation request can carry redirect mode = manual; if we forward that
+  // into `env.ASSETS.fetch`, we might accidentally return a redirect response
+  // (and cache it), causing ERR_TOO_MANY_REDIRECTS.
+  const req = new Request(indexUrl.toString(), {
+    method: 'GET',
+    headers: { Accept: 'text/html' },
+    redirect: 'follow',
+  });
+
+  return env.ASSETS.fetch(req);
+}
+
 async function fetchPublicStatusSnapshot(env) {
   const apiOrigin = env.UPTIMER_API_ORIGIN;
   if (typeof apiOrigin !== 'string' || apiOrigin.length === 0) return null;
@@ -172,17 +194,17 @@ export default {
       const cached = await caches.default.match(cacheKey);
       if (cached) return cached;
 
-      const base = await env.ASSETS.fetch(
-        new Request(new URL('/index.html', url).toString(), request),
-      );
+      const base = await fetchIndexHtml(env, url);
       const html = await base.text();
 
       const snapshot = await fetchPublicStatusSnapshot(env);
       if (!snapshot) {
-        const resp = new Response(html, base);
-        resp.headers.set('Content-Type', 'text/html; charset=utf-8');
-        resp.headers.append('Vary', 'Accept');
-        return resp;
+        const headers = new Headers(base.headers);
+        headers.set('Content-Type', 'text/html; charset=utf-8');
+        headers.append('Vary', 'Accept');
+        headers.delete('Location');
+
+        return new Response(html, { status: 200, headers });
       }
 
       const now = Math.floor(Date.now() / 1000);
@@ -199,10 +221,13 @@ export default {
         `  <script>globalThis.__UPTIMER_INITIAL_STATUS__=${safeJsonForInlineScript(snapshot)};</script>\n</head>`,
       );
 
-      const resp = new Response(injected, base);
-      resp.headers.set('Content-Type', 'text/html; charset=utf-8');
-      resp.headers.set('Cache-Control', computeCacheControl(age));
-      resp.headers.append('Vary', 'Accept');
+      const headers = new Headers(base.headers);
+      headers.set('Content-Type', 'text/html; charset=utf-8');
+      headers.set('Cache-Control', computeCacheControl(age));
+      headers.append('Vary', 'Accept');
+      headers.delete('Location');
+
+      const resp = new Response(injected, { status: 200, headers });
 
       ctx.waitUntil(caches.default.put(cacheKey, resp.clone()));
       return resp;
@@ -213,13 +238,15 @@ export default {
 
     // SPA fallback for client-side routes.
     if (wantsHtml && assetResp.status === 404) {
-      const indexResp = await env.ASSETS.fetch(
-        new Request(new URL('/index.html', url).toString(), request),
-      );
-      const out = new Response(await indexResp.text(), indexResp);
-      out.headers.set('Content-Type', 'text/html; charset=utf-8');
-      out.headers.append('Vary', 'Accept');
-      return out;
+      const indexResp = await fetchIndexHtml(env, url);
+      const html = await indexResp.text();
+
+      const headers = new Headers(indexResp.headers);
+      headers.set('Content-Type', 'text/html; charset=utf-8');
+      headers.append('Vary', 'Accept');
+      headers.delete('Location');
+
+      return new Response(html, { status: 200, headers });
     }
 
     return assetResp;
