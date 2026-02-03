@@ -58,6 +58,20 @@ function formatPct(v: number): string {
   return `${v.toFixed(3)}%`;
 }
 
+function getUptimeTextColorClasses(uptimePct: number): string {
+  if (!Number.isFinite(uptimePct)) return 'text-slate-500 dark:text-slate-400';
+
+  // Match the per-day uptime bar tiers (green -> red).
+  if (uptimePct >= 99.99) return 'text-emerald-600 dark:text-emerald-400';
+  if (uptimePct >= 99.95) return 'text-green-600 dark:text-green-400';
+  if (uptimePct >= 99.9) return 'text-lime-600 dark:text-lime-400';
+  if (uptimePct >= 99.5) return 'text-yellow-600 dark:text-yellow-400';
+  if (uptimePct >= 99.0) return 'text-amber-600 dark:text-amber-400';
+  if (uptimePct >= 98.0) return 'text-orange-600 dark:text-orange-400';
+  if (uptimePct >= 95.0) return 'text-red-600 dark:text-red-400';
+  return 'text-rose-700 dark:text-rose-400';
+}
+
 function MonitorCard({ monitor, onSelect, onDayClick }: { monitor: PublicMonitor; onSelect: () => void; onDayClick: (dayStartAt: number) => void }) {
   const uptime30d = monitor.uptime_30d;
 
@@ -84,7 +98,7 @@ function MonitorCard({ monitor, onSelect, onDayClick }: { monitor: PublicMonitor
         <div className="flex items-center gap-3 sm:gap-4">
           {uptime30d && (
             <span className="text-slate-600 dark:text-slate-300">
-              <span className="font-medium text-emerald-600 dark:text-emerald-400">
+              <span className={`font-medium ${getUptimeTextColorClasses(uptime30d.uptime_pct)}`}>
                 {formatPct(uptime30d.uptime_pct)}
               </span>{' '}
               uptime (30d)
