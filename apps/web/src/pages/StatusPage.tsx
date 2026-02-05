@@ -64,27 +64,56 @@ function formatPct(v: number): string {
 
 const HEARTBEAT_BARS = 60;
 
-function getUptimeTextColorClasses(uptimePct: number, level: 1 | 2 | 3 | 4 | 5): string {
-  if (!Number.isFinite(uptimePct)) return 'text-slate-500 dark:text-slate-400';
+type UptimeTier = 'emerald' | 'green' | 'lime' | 'yellow' | 'amber' | 'orange' | 'red' | 'rose' | 'slate';
 
-  const thresholdsByLevel: Record<1 | 2 | 3 | 4 | 5, { emerald: number; green: number; lime: number; yellow: number; amber: number; orange: number; red: number }> = {
-    1: { emerald: 99.0, green: 98.0, lime: 97.0, yellow: 96.0, amber: 95.0, orange: 90.0, red: 80.0 },
-    2: { emerald: 99.9, green: 99.5, lime: 99.0, yellow: 98.5, amber: 98.0, orange: 97.0, red: 95.0 },
-    3: { emerald: 99.99, green: 99.95, lime: 99.9, yellow: 99.5, amber: 99.0, orange: 98.0, red: 97.0 },
-    4: { emerald: 99.999, green: 99.995, lime: 99.99, yellow: 99.95, amber: 99.9, orange: 99.5, red: 99.0 },
-    5: { emerald: 100.0, green: 99.999, lime: 99.995, yellow: 99.99, amber: 99.95, orange: 99.9, red: 99.5 },
-  };
+const UPTIME_THRESHOLDS_BY_LEVEL: Record<
+  1 | 2 | 3 | 4 | 5,
+  { emerald: number; green: number; lime: number; yellow: number; amber: number; orange: number; red: number }
+> = {
+  1: { emerald: 99.0, green: 98.0, lime: 97.0, yellow: 96.0, amber: 95.0, orange: 90.0, red: 80.0 },
+  2: { emerald: 99.9, green: 99.5, lime: 99.0, yellow: 98.5, amber: 98.0, orange: 97.0, red: 95.0 },
+  3: { emerald: 99.99, green: 99.95, lime: 99.9, yellow: 99.5, amber: 99.0, orange: 98.0, red: 97.0 },
+  4: { emerald: 99.999, green: 99.995, lime: 99.99, yellow: 99.95, amber: 99.9, orange: 99.5, red: 99.0 },
+  5: { emerald: 100.0, green: 99.999, lime: 99.995, yellow: 99.99, amber: 99.95, orange: 99.9, red: 99.5 },
+};
 
-  const t = thresholdsByLevel[level] ?? thresholdsByLevel[3];
+function getUptimeTier(uptimePct: number, level: 1 | 2 | 3 | 4 | 5): UptimeTier {
+  if (!Number.isFinite(uptimePct)) return 'slate';
 
-  if (uptimePct >= t.emerald) return 'text-emerald-600 dark:text-emerald-400';
-  if (uptimePct >= t.green) return 'text-green-600 dark:text-green-400';
-  if (uptimePct >= t.lime) return 'text-lime-600 dark:text-lime-400';
-  if (uptimePct >= t.yellow) return 'text-yellow-600 dark:text-yellow-400';
-  if (uptimePct >= t.amber) return 'text-amber-600 dark:text-amber-400';
-  if (uptimePct >= t.orange) return 'text-orange-600 dark:text-orange-400';
-  if (uptimePct >= t.red) return 'text-red-600 dark:text-red-400';
-  return 'text-rose-700 dark:text-rose-400';
+  const t = UPTIME_THRESHOLDS_BY_LEVEL[level] ?? UPTIME_THRESHOLDS_BY_LEVEL[3];
+
+  if (uptimePct >= t.emerald) return 'emerald';
+  if (uptimePct >= t.green) return 'green';
+  if (uptimePct >= t.lime) return 'lime';
+  if (uptimePct >= t.yellow) return 'yellow';
+  if (uptimePct >= t.amber) return 'amber';
+  if (uptimePct >= t.orange) return 'orange';
+  if (uptimePct >= t.red) return 'red';
+  return 'rose';
+}
+
+function getUptimeDotBgClasses(uptimePct: number, level: 1 | 2 | 3 | 4 | 5): string {
+  switch (getUptimeTier(uptimePct, level)) {
+    case 'emerald':
+      return 'bg-emerald-500 dark:bg-emerald-400';
+    case 'green':
+      return 'bg-green-500 dark:bg-green-400';
+    case 'lime':
+      return 'bg-lime-500 dark:bg-lime-400';
+    case 'yellow':
+      return 'bg-yellow-500 dark:bg-yellow-400';
+    case 'amber':
+      return 'bg-amber-500 dark:bg-amber-400';
+    case 'orange':
+      return 'bg-orange-500 dark:bg-orange-400';
+    case 'red':
+      return 'bg-red-500 dark:bg-red-400';
+    case 'rose':
+      return 'bg-rose-600 dark:bg-rose-400';
+    case 'slate':
+    default:
+      return 'bg-slate-300 dark:bg-slate-600';
+  }
 }
 
 function MonitorCard({ monitor, onSelect, onDayClick, timeZone }: { monitor: PublicMonitor; onSelect: () => void; onDayClick: (dayStartAt: number) => void; timeZone: string }) {
@@ -107,16 +136,20 @@ function MonitorCard({ monitor, onSelect, onDayClick, timeZone }: { monitor: Pub
         <Badge variant={getStatusBadgeVariant(monitor.status)}>{monitor.status}</Badge>
       </div>
 
-      <div className="mb-2 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-        <span className="uppercase tracking-wide">Uptime (30d)</span>
+      <div className="mb-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+        <span className="uppercase tracking-wide">Availability (30d)</span>
         {uptime30d ? (
           <span
-            className={`font-medium ${getUptimeTextColorClasses(uptime30d.uptime_pct, monitor.uptime_rating_level)}`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-slate-100/80 dark:bg-slate-700/50 px-2 py-0.5 text-[11px] font-medium tabular-nums text-slate-700 dark:text-slate-200"
+            title="Average availability over the last 30 days"
           >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${getUptimeDotBgClasses(uptime30d.uptime_pct, monitor.uptime_rating_level)}`}
+            />
             {formatPct(uptime30d.uptime_pct)}
           </span>
         ) : (
-          <span>-</span>
+          <span className="text-slate-400 dark:text-slate-500">-</span>
         )}
       </div>
 
