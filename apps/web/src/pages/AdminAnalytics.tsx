@@ -21,9 +21,6 @@ import { formatDateTime } from '../utils/datetime';
 const overviewRanges: AnalyticsOverviewRange[] = ['24h', '7d'];
 const monitorRanges: AnalyticsRange[] = ['24h', '7d', '30d', '90d'];
 
-const navActionClass =
-  'flex h-9 items-center justify-center rounded-lg px-3 text-sm text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100';
-
 function formatPct(v: number): string {
   if (!Number.isFinite(v)) return '-';
   return `${v.toFixed(3)}%`;
@@ -181,26 +178,55 @@ export function AdminAnalytics() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/95 backdrop-blur dark:border-slate-700/80 dark:bg-slate-800/95">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
-          <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100 sm:text-xl">
-            {settings?.site_title
-              ? `${settings.site_title} · Analytics`
-              : 'Analytics'}
+      <header className="bg-white dark:bg-slate-800 shadow-sm dark:shadow-none dark:border-b dark:border-slate-700">
+        <div className="max-w-6xl mx-auto px-4 py-3 sm:py-4 flex justify-between items-center">
+          <h1 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-slate-100">
+            {settings?.site_title ? `${settings.site_title} · Analytics` : 'Analytics'}
           </h1>
 
           <div className="flex items-center gap-1">
             <ThemeToggle />
-            <Link to={ADMIN_PATH} className={navActionClass}>
+            <Link
+              to={ADMIN_PATH}
+              className="flex items-center justify-center h-9 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors px-3 rounded-lg"
+            >
+              <svg className="w-5 h-5 sm:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+                />
+              </svg>
               <span className="hidden sm:inline">Dashboard</span>
-              <span className="sm:hidden">DB</span>
             </Link>
-            <Link to="/" className={navActionClass}>
+            <Link
+              to="/"
+              className="flex items-center justify-center h-9 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors px-3 rounded-lg"
+            >
+              <svg className="w-5 h-5 sm:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
               <span className="hidden sm:inline">Status</span>
-              <span className="sm:hidden">ST</span>
             </Link>
-            <button onClick={logout} className={`${navActionClass} text-red-500 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300`}>
-              Logout
+            <button
+              onClick={logout}
+              className="flex items-center justify-center h-9 text-sm text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors px-3 rounded-lg"
+            >
+              <svg className="w-5 h-5 sm:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                />
+              </svg>
+              <span className="hidden sm:inline">Logout</span>
             </button>
           </div>
         </div>
