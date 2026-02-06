@@ -731,9 +731,7 @@ export function StatusPage() {
             </div>
 
             {resolvedHistoryQuery.isLoading ? (
-              <Card className="p-6 text-center">
-                <p className="text-slate-500 dark:text-slate-400">Loading…</p>
-              </Card>
+              <div className="ui-skeleton h-28 rounded-xl border border-slate-200/70 dark:border-slate-700/70" />
             ) : resolvedHistoryQuery.isError ? (
               <Card className="p-6 text-center">
                 <p className="text-sm text-red-600 dark:text-red-400">Failed to load incident history</p>
@@ -763,9 +761,7 @@ export function StatusPage() {
             </div>
 
             {maintenanceHistoryQuery.isLoading ? (
-              <Card className="p-6 text-center">
-                <p className="text-slate-500 dark:text-slate-400">Loading…</p>
-              </Card>
+              <div className="ui-skeleton h-28 rounded-xl border border-slate-200/70 dark:border-slate-700/70" />
             ) : maintenanceHistoryQuery.isError ? (
               <Card className="p-6 text-center">
                 <p className="text-sm text-red-600 dark:text-red-400">Failed to load maintenance history</p>
