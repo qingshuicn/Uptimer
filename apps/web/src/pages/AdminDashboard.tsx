@@ -61,6 +61,32 @@ type ModalState =
   | { type: 'create-maintenance' }
   | { type: 'edit-maintenance'; window: MaintenanceWindow };
 
+
+type MonitorTestFeedback = {
+  at: number;
+  monitor: Awaited<ReturnType<typeof testMonitor>>['monitor'];
+  result: Awaited<ReturnType<typeof testMonitor>>['result'];
+};
+
+type MonitorTestErrorState = {
+  monitorId: number;
+  at: number;
+  message: string;
+};
+
+type ChannelTestFeedback = {
+  at: number;
+  channelId: number;
+  eventKey: Awaited<ReturnType<typeof testNotificationChannel>>['event_key'];
+  delivery: Awaited<ReturnType<typeof testNotificationChannel>>['delivery'];
+};
+
+type ChannelTestErrorState = {
+  channelId: number;
+  at: number;
+  message: string;
+};
+
 const SETTINGS_ICON_PATH =
   'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z';
 
@@ -122,6 +148,10 @@ export function AdminDashboard() {
   const [modal, setModal] = useState<ModalState>({ type: 'none' });
   const [testingMonitorId, setTestingMonitorId] = useState<number | null>(null);
   const [testingChannelId, setTestingChannelId] = useState<number | null>(null);
+  const [monitorTestFeedback, setMonitorTestFeedback] = useState<MonitorTestFeedback | null>(null);
+  const [monitorTestError, setMonitorTestError] = useState<MonitorTestErrorState | null>(null);
+  const [channelTestFeedback, setChannelTestFeedback] = useState<ChannelTestFeedback | null>(null);
+  const [channelTestError, setChannelTestError] = useState<ChannelTestErrorState | null>(null);
 
   const monitorsQuery = useQuery({ queryKey: ['admin-monitors'], queryFn: () => fetchAdminMonitors() });
   const channelsQuery = useQuery({ queryKey: ['admin-channels'], queryFn: () => fetchNotificationChannels() });
@@ -258,7 +288,22 @@ export function AdminDashboard() {
     },
   });
 
-  const testMonitorMut = useMutation({ mutationFn: testMonitor, onSettled: () => setTestingMonitorId(null) });
+  const testMonitorMut = useMutation({
+    mutationFn: testMonitor,
+    onSuccess: (data) => {
+      setMonitorTestFeedback({ at: Math.floor(Date.now() / 1000), monitor: data.monitor, result: data.result });
+      setMonitorTestError(null);
+    },
+    onError: (err, monitorId) => {
+      setMonitorTestError({
+        monitorId,
+        at: Math.floor(Date.now() / 1000),
+        message: formatError(err) ?? 'Failed to run monitor test',
+      });
+      setMonitorTestFeedback(null);
+    },
+    onSettled: () => setTestingMonitorId(null),
+  });
 
   const createChannelMut = useMutation({
     mutationFn: createNotificationChannel,
@@ -281,7 +326,27 @@ export function AdminDashboard() {
       closeModal();
     },
   });
-  const testChannelMut = useMutation({ mutationFn: testNotificationChannel, onSettled: () => setTestingChannelId(null) });
+  const testChannelMut = useMutation({
+    mutationFn: testNotificationChannel,
+    onSuccess: (data, channelId) => {
+      setChannelTestFeedback({
+        at: Math.floor(Date.now() / 1000),
+        channelId,
+        eventKey: data.event_key,
+        delivery: data.delivery,
+      });
+      setChannelTestError(null);
+    },
+    onError: (err, channelId) => {
+      setChannelTestError({
+        channelId,
+        at: Math.floor(Date.now() / 1000),
+        message: formatError(err) ?? 'Failed to run webhook test',
+      });
+      setChannelTestFeedback(null);
+    },
+    onSettled: () => setTestingChannelId(null),
+  });
 
   const deleteChannelMut = useMutation({
     mutationFn: deleteNotificationChannel,
@@ -363,6 +428,11 @@ export function AdminDashboard() {
     [monitorsQuery.data?.monitors],
   );
 
+  const channelNameById = useMemo(
+    () => new Map((channelsQuery.data?.notification_channels ?? []).map((ch) => [ch.id, ch.name] as const)),
+    [channelsQuery.data?.notification_channels],
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <header className="bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
@@ -442,6 +512,72 @@ export function AdminDashboard() {
               <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Monitors</h2>
               <Button onClick={() => setModal({ type: 'create-monitor' })}>Add Monitor</Button>
             </div>
+            {testingMonitorId !== null && (
+              <Card className="p-3 border-blue-200 bg-blue-50/70 dark:bg-blue-500/10 dark:border-blue-400/30">
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  Running test for{' '}
+                  <span className="font-medium">{monitorNameById.get(testingMonitorId) ?? `#${testingMonitorId}`}</span>
+                  ...
+                </div>
+              </Card>
+            )}
+
+            {monitorTestFeedback && (
+              <Card className="p-3 border-slate-200 dark:border-slate-600">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    Last test: {monitorTestFeedback.monitor.name}
+                  </div>
+                  <Badge
+                    variant={
+                      monitorTestFeedback.result.status === 'up'
+                        ? 'up'
+                        : monitorTestFeedback.result.status === 'down'
+                          ? 'down'
+                          : monitorTestFeedback.result.status === 'maintenance'
+                            ? 'maintenance'
+                            : 'unknown'
+                    }
+                  >
+                    {monitorTestFeedback.result.status}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {formatDateTime(monitorTestFeedback.at, settings?.site_timezone)}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+                  <span>Attempts: {monitorTestFeedback.result.attempts}</span>
+                  <span>
+                    HTTP: {monitorTestFeedback.result.http_status !== null ? monitorTestFeedback.result.http_status : '-'}
+                  </span>
+                  <span>
+                    Latency: {monitorTestFeedback.result.latency_ms !== null ? `${monitorTestFeedback.result.latency_ms}ms` : '-'}
+                  </span>
+                </div>
+                <div
+                  className={`mt-2 text-sm ${
+                    monitorTestFeedback.result.error
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-emerald-700 dark:text-emerald-400'
+                  }`}
+                >
+                  {monitorTestFeedback.result.error ?? 'No error returned'}
+                </div>
+              </Card>
+            )}
+
+            {monitorTestError && (
+              <Card className="p-3 border-red-200 bg-red-50/70 dark:bg-red-500/10 dark:border-red-400/30">
+                <div className="text-sm font-medium text-red-700 dark:text-red-300">
+                  Monitor test failed: {monitorNameById.get(monitorTestError.monitorId) ?? `#${monitorTestError.monitorId}`}
+                </div>
+                <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  {formatDateTime(monitorTestError.at, settings?.site_timezone)}
+                </div>
+                <div className="mt-1 text-sm text-red-700 dark:text-red-300">{monitorTestError.message}</div>
+              </Card>
+            )}
+
             {monitorsQuery.isLoading ? (
               <div className="text-slate-500 dark:text-slate-400">Loading...</div>
             ) : !monitorsQuery.data?.monitors.length ? (
@@ -509,9 +645,11 @@ export function AdminDashboard() {
                               <button
                                 onClick={() => {
                                   setTestingMonitorId(m.id);
+                                  setMonitorTestFeedback(null);
+                                  setMonitorTestError(null);
                                   testMonitorMut.mutate(m.id);
                                 }}
-                                disabled={testingMonitorId === m.id}
+                                disabled={testMonitorMut.isPending}
                                 className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 px-2 sm:px-2.5 py-1.5 rounded-md transition-colors"
                               >
                                 {testingMonitorId === m.id ? 'Testing...' : 'Test'}
@@ -567,6 +705,71 @@ export function AdminDashboard() {
               <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Notification Channels</h2>
               <Button onClick={() => setModal({ type: 'create-channel' })}>Add Channel</Button>
             </div>
+            {testingChannelId !== null && (
+              <Card className="p-3 border-blue-200 bg-blue-50/70 dark:bg-blue-500/10 dark:border-blue-400/30">
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  Sending test webhook to{' '}
+                  <span className="font-medium">{channelNameById.get(testingChannelId) ?? `#${testingChannelId}`}</span>
+                  ...
+                </div>
+              </Card>
+            )}
+
+            {channelTestFeedback && (
+              <Card className="p-3 border-slate-200 dark:border-slate-600">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    Last webhook test: {channelNameById.get(channelTestFeedback.channelId) ?? `#${channelTestFeedback.channelId}`}
+                  </div>
+                  <Badge
+                    variant={
+                      channelTestFeedback.delivery?.status === 'success'
+                        ? 'up'
+                        : channelTestFeedback.delivery?.status === 'failed'
+                          ? 'down'
+                          : 'unknown'
+                    }
+                  >
+                    {channelTestFeedback.delivery?.status ?? 'unknown'}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {formatDateTime(channelTestFeedback.at, settings?.site_timezone)}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+                  <span>HTTP: {channelTestFeedback.delivery?.http_status ?? '-'}</span>
+                  <span className="max-w-full truncate" title={channelTestFeedback.eventKey}>
+                    Event key: {channelTestFeedback.eventKey}
+                  </span>
+                </div>
+                <div
+                  className={`mt-2 text-sm ${
+                    channelTestFeedback.delivery?.status === 'success'
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : 'text-red-600 dark:text-red-400'
+                  }`}
+                >
+                  {channelTestFeedback.delivery?.error
+                    ? channelTestFeedback.delivery.error
+                    : channelTestFeedback.delivery
+                      ? 'Delivery recorded successfully'
+                      : 'No delivery row returned by API'}
+                </div>
+              </Card>
+            )}
+
+            {channelTestError && (
+              <Card className="p-3 border-red-200 bg-red-50/70 dark:bg-red-500/10 dark:border-red-400/30">
+                <div className="text-sm font-medium text-red-700 dark:text-red-300">
+                  Webhook test failed: {channelNameById.get(channelTestError.channelId) ?? `#${channelTestError.channelId}`}
+                </div>
+                <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  {formatDateTime(channelTestError.at, settings?.site_timezone)}
+                </div>
+                <div className="mt-1 text-sm text-red-700 dark:text-red-300">{channelTestError.message}</div>
+              </Card>
+            )}
+
             {channelsQuery.isLoading ? (
               <div className="text-slate-500 dark:text-slate-400">Loading...</div>
             ) : !channelsQuery.data?.notification_channels.length ? (
@@ -596,9 +799,11 @@ export function AdminDashboard() {
                               <button
                                 onClick={() => {
                                   setTestingChannelId(ch.id);
+                                  setChannelTestFeedback(null);
+                                  setChannelTestError(null);
                                   testChannelMut.mutate(ch.id);
                                 }}
-                                disabled={testingChannelId === ch.id}
+                                disabled={testChannelMut.isPending}
                                 className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 px-2 sm:px-2.5 py-1.5 rounded-md transition-colors"
                               >
                                 {testingChannelId === ch.id ? 'Testing...' : 'Test'}
