@@ -37,6 +37,11 @@ function normalizeLocaleSetting(value: unknown): LocaleSetting | null {
   return supportedLocales.includes(value as SupportedLocale) ? (value as SupportedLocale) : null;
 }
 
+function normalizeSupportedLocale(value: unknown): SupportedLocale | null {
+  if (typeof value !== 'string') return null;
+  return supportedLocales.includes(value as SupportedLocale) ? (value as SupportedLocale) : null;
+}
+
 function detectBrowserLocale(): SupportedLocale {
   if (typeof navigator === 'undefined') return 'en';
 
@@ -67,7 +72,9 @@ function interpolate(template: string, values?: TranslateValues): string {
 }
 
 function resolveEffectiveLocale(setting: LocaleSetting, browserLocale: SupportedLocale): SupportedLocale {
-  return setting === 'auto' ? browserLocale : setting;
+  const normalizedSetting = normalizeLocaleSetting(setting) ?? 'auto';
+  const normalizedBrowser = normalizeSupportedLocale(browserLocale) ?? 'en';
+  return normalizedSetting === 'auto' ? normalizedBrowser : normalizedSetting;
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
@@ -80,7 +87,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   );
 
   const setLocaleSetting = useCallback((next: LocaleSetting) => {
-    setLocaleSettingState(next);
+    const normalized = normalizeLocaleSetting(next) ?? 'auto';
+    setLocaleSettingState((prev) => (prev === normalized ? prev : normalized));
   }, []);
 
   const applyServerLocaleSetting = useCallback((next: LocaleSetting | null | undefined) => {
@@ -108,7 +116,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const t = useCallback(
     (key: MessageKey, values?: TranslateValues) => {
-      const translated = messages[locale][key] ?? messages.en[key];
+      const localeMessages = messages[locale] ?? messages.en;
+      const translated = localeMessages[key] ?? messages.en[key] ?? key;
       return interpolate(translated, values);
     },
     [locale],
