@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Heartbeat, CheckStatus } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import { statusLabel } from '../i18n/labels';
+import { clampLatencyToCeiling, suggestLatencyAxisCeiling } from '../utils/latencyScale';
 
 interface HeartbeatBarProps {
   heartbeats: Heartbeat[];
@@ -39,6 +40,7 @@ function getStatusGlow(status: CheckStatus): string {
 interface LatencyScale {
   min: number;
   span: number;
+  ceiling: number | null;
 }
 
 interface DisplayHeartbeat extends Heartbeat {
@@ -54,9 +56,12 @@ function buildLatencyScale(heartbeats: DisplayHeartbeat[]): LatencyScale | null 
 
   if (latencies.length === 0) return null;
 
-  const min = Math.min(...latencies);
-  const max = Math.max(...latencies);
-  return { min, span: Math.max(1, max - min) };
+  const ceiling = suggestLatencyAxisCeiling(latencies);
+  const displayLatencies = latencies.map((latency) => clampLatencyToCeiling(latency, ceiling));
+
+  const min = Math.min(...displayLatencies);
+  const max = Math.max(...displayLatencies);
+  return { min, span: Math.max(1, max - min), ceiling };
 }
 
 function getBarHeight(
@@ -70,7 +75,8 @@ function getBarHeight(
 
   if (heartbeat.latency_ms === null || !scale) return compact ? '74%' : '78%';
 
-  const normalized = (heartbeat.latency_ms - scale.min) / scale.span;
+  const displayLatency = clampLatencyToCeiling(heartbeat.latency_ms, scale.ceiling);
+  const normalized = (displayLatency - scale.min) / scale.span;
   const clamped = Math.max(0, Math.min(1, normalized));
   const minHeight = compact ? 36 : 38;
   const pct = minHeight + clamped * (100 - minHeight);

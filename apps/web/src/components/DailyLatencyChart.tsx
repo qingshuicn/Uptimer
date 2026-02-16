@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import type { MonitorAnalyticsDayPoint } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import { useTheme } from '../app/ThemeContext';
+import { suggestLatencyAxisCeiling } from '../utils/latencyScale';
 
 interface DailyLatencyChartProps {
   points: MonitorAnalyticsDayPoint[];
@@ -25,6 +26,13 @@ export function DailyLatencyChart({ points, height = 220 }: DailyLatencyChartPro
       p95_latency_ms: p.p95_latency_ms,
       p50_latency_ms: p.p50_latency_ms,
     }));
+  const axisCeiling = suggestLatencyAxisCeiling(
+    data.flatMap((point) => [point.p95_latency_ms, point.p50_latency_ms]).filter(
+      (value): value is number => typeof value === 'number',
+    ),
+  );
+  const yAxisDomainProps =
+    axisCeiling === null ? {} : { domain: [0, axisCeiling] as [number, number] };
 
   if (data.length === 0) {
     return (
@@ -50,6 +58,7 @@ export function DailyLatencyChart({ points, height = 220 }: DailyLatencyChartPro
         <YAxis
           tick={{ fontSize: 12, fill: axisColor }}
           stroke={axisColor}
+          {...yAxisDomainProps}
           tickFormatter={(v) => `${v}ms`}
         />
         <Tooltip

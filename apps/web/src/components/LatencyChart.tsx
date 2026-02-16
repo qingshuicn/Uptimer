@@ -2,6 +2,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import type { LatencyPoint } from '../api/types';
 import { useI18n } from '../app/I18nContext';
 import { useTheme } from '../app/ThemeContext';
+import { suggestLatencyAxisCeiling } from '../utils/latencyScale';
 
 interface LatencyChartProps {
   points: LatencyPoint[];
@@ -21,8 +22,11 @@ export function LatencyChart({ points, height = 200 }: LatencyChartProps) {
     .filter((p) => p.status === 'up' && p.latency_ms !== null)
     .map((p) => ({
       time: p.checked_at,
-      latency: p.latency_ms,
+      latency: p.latency_ms as number,
     }));
+  const axisCeiling = suggestLatencyAxisCeiling(data.map((point) => point.latency));
+  const yAxisDomainProps =
+    axisCeiling === null ? {} : { domain: [0, axisCeiling] as [number, number] };
 
   if (data.length === 0) {
     return (
@@ -47,6 +51,7 @@ export function LatencyChart({ points, height = 200 }: LatencyChartProps) {
         <YAxis
           tick={{ fontSize: 12, fill: axisColor }}
           stroke={axisColor}
+          {...yAxisDomainProps}
           tickFormatter={(v) => `${v}ms`}
         />
         <Tooltip
