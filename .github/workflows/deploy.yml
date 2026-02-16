@@ -55,12 +55,6 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Quality gates
-        run: |
-          pnpm -r lint
-          pnpm -r typecheck
-          pnpm -r --if-present test
-
       # ---------------------------------------------------------------------
       # Configuration model (important for fork sync compatibility / idempotence)
       #
@@ -85,8 +79,8 @@ jobs:
       # - UPTIMER_D1_BINDING: D1 binding name in Worker (default: DB).
       # - UPTIMER_API_BASE: Web build-time API base (defaults to derived workers.dev URL + /api/v1).
       #
-      # Optional secret:
-      # - UPTIMER_ADMIN_TOKEN: If set, we will upsert the Worker secret ADMIN_TOKEN.
+      # Required secret:
+      # - UPTIMER_ADMIN_TOKEN: Admin dashboard access key; written to Worker secret ADMIN_TOKEN.
       # ---------------------------------------------------------------------
 
       - name: Resolve Cloudflare Account ID

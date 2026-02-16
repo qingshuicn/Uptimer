@@ -866,7 +866,7 @@ publicRoutes.get('/monitors/:id/uptime', async (c) => {
     (checkRows ?? []).map((r) => ({ checked_at: r.checked_at, status: toCheckStatus(r.status) })),
   );
 
-  // Unknown time is treated as "unavailable" per Develop/Application.md; exclude overlap with downtime to avoid double counting.
+  // Unknown time is treated as "unavailable" per Application.md; exclude overlap with downtime to avoid double counting.
   const unknown_sec = Math.max(
     0,
     sumIntervals(unknownIntervals) - overlapSeconds(unknownIntervals, downtimeIntervals),

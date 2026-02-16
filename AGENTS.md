@@ -1,107 +1,82 @@
 # AGENTS.md: Working Agreement for Uptimer
 
-本文件用于指导代码助手/自动化代理在本仓库内工作的方式与约定（避免反复沟通、减少返工）。
+Guidelines for code assistants and automation agents working in this repository.
 
 ---
 
-## MUST READ FIRST（强制）
+## 1. Required Reading
 
-在执行任何“写入/重构/生成代码/修改配置/运行破坏性命令”之前，必须先阅读并理解以下文档：
+Before making any changes (code, config, or destructive commands), read and understand:
 
-- `AGENTS.md`（本文件）
-- `Develop/Application.md`（产品规格与技术约束）
-- `Develop/Structure.md`（目录结构与模块边界）
-- `Develop/Plan.md`（里程碑与验收标准）
-- `Develop/API-Reference.md`（Cloudflare/D1/出站探测等 API 参考）
+- `AGENTS.md` (this file)
+- `Develop/Application.md` (product specification & technical constraints)
+- `Develop/Structure.md` (directory structure & module boundaries)
+- `Develop/Plan.md` (milestones & acceptance criteria)
+- `Develop/API-Reference.md` (Cloudflare / D1 / outbound API reference)
 
-如果尚未阅读或内容与当前任务冲突：先停止实现，先对齐文档与需求，再继续。
-
----
-
-## 0. Codex Skills（本机环境）
-
-说明：如果你以 Codex CLI/类似代理运行，本机可能已安装可复用的 “Skills”（存放在 `SKILL.md`）。当用户明确点名某个 skill，或任务明显匹配某个 skill 描述时，必须使用对应 skill 的流程。
-
-本机已知可用 skills（路径为本机路径）：
-
-- `create-plan`：用户明确要求“计划/Plan”时使用。(`C:/Users/User/.codex/skills/create-plan/SKILL.md`)
-- `skill-creator`：创建/更新 skills 时使用。(`C:/Users/User/.codex/skills/.system/skill-creator/SKILL.md`)
-- `skill-installer`：安装 curated skill 或从 repo 安装 skills 时使用。(`C:/Users/User/.codex/skills/.system/skill-installer/SKILL.md`)
-
-执行约定（简版）：
-
-- 先打开对应 `SKILL.md`，只读到足够执行该任务为止；避免一次性读入大量参考文件。
-- 若 skill 提供脚本/模板，优先复用而不是手写大段内容。
-- 未找到/无法读取 skill 文件时，简要说明并用最佳替代方案继续推进。
+If documentation conflicts with the current task, stop and align before proceeding.
 
 ---
 
-## 1. 项目事实（先读这些）
+## 2. Technology Stack (Locked)
 
-- 产品规格：`Develop/Application.md`
-- 目录结构与边界：`Develop/Structure.md`
-- 交付计划：`Develop/Plan.md`
-- 参考项目：`UptimeFlare/`（仅用于查 Cloudflare API/Workers 用法；不要借鉴其架构/实现，更不要复制其业务逻辑）
+Do not introduce alternative technologies without explicit approval.
 
----
+- **Frontend (Pages)**: React + Vite + TypeScript + Tailwind + React Router + TanStack Query + Recharts
+- **Backend (Workers)**: TypeScript + Hono + Zod
+- **Database**: Cloudflare D1 + Drizzle ORM; migrations via Wrangler D1 (SQL)
+- **Auth**: Admin Bearer Token (stored in Workers Secret)
 
-## 2. 已敲定技术选型（不要引入替代方案）
-
-- Frontend (Pages)：React + Vite + TypeScript + Tailwind + React Router + TanStack Query + Recharts
-- Backend (Workers)：TypeScript + Hono + Zod
-- DB：Cloudflare D1 + Drizzle ORM；迁移用 Wrangler D1 migrations（SQL migrations）
-- Auth：Admin Bearer Token（存于 Workers Secret）
-
-如果要引入新依赖/新服务（Queues、DO、R2 等），必须先在 PR/变更说明中写清“为什么必须要引入、替代方案为何不行、影响面”。
+Any new dependency or service (Queues, DO, R2, etc.) requires a written justification covering: why it's necessary, why alternatives don't work, and the impact scope.
 
 ---
 
-## 3. 仓库规则（重要）
+## 3. Repository Rules
 
-- 不要修改 `UptimeFlare/` 目录（除非我明确要求）。
-- 所有对外接口必须符合 `Develop/Application.md` 的 API 约定（路径、时间字段、错误格式）。
-- 所有输入必须用 Zod 做运行时校验；不要信任来自客户端/DB 的 JSON 字段。
-- 所有 DB 写入必须参数化（Drizzle 或 D1 prepared statements），禁止拼接 SQL。
-- 监控探测必须禁用缓存（HTTP check 必须显式 no-store，并设置 `cf.cacheTtlByStatus` 不缓存）。
-
----
-
-## 4. 实现优先级（MVP）
-
-严格按 `Develop/Plan.md` 从 Phase 0 -> Phase 7 推进：
-
-- 先 Worker + D1 跑通（含 scheduled）再做完整 UI
-- 先 HTTP/TCP 与状态机正确性，再谈多地域与高级分析
+- **Do not modify** `UptimeFlare/` (reference project, read-only).
+- All external APIs must follow `Develop/Application.md` conventions (paths, time fields, error format).
+- All input must be validated with Zod at runtime — never trust client or DB JSON fields.
+- All DB writes must use parameterized queries (Drizzle or D1 prepared statements). No SQL concatenation.
+- HTTP monitoring probes must explicitly disable caching (`no-store` + `cf.cacheTtlByStatus`).
 
 ---
 
-## 5. 开发/提交标准（Definition of Done）
+## 4. Implementation Priority
 
-每次变更至少满足：
+Follow `Develop/Plan.md` strictly from Phase 0 through Phase 7:
 
-- 变更范围小且聚焦（不要“一次性大改”）
-- 本地能跑通基础命令（如果已存在脚本）：
-  - `pnpm -r lint`
-  - `pnpm -r typecheck`
-  - `pnpm -r test`（若已建立）
-- D1 schema 变更必须伴随新增 migration（不要修改旧 migration）
-- 关键行为变更必须补充最小测试或可复现实例（至少给出 curl/步骤）
+- Worker + D1 must be functional (including scheduled triggers) before building full UI.
+- HTTP/TCP monitoring and state machine correctness come before multi-region or advanced analytics.
 
 ---
 
-## 6. 安全基线（必须遵守）
+## 5. Definition of Done
 
-- Monitor target 属于受控 SSRF 能力：必须限制协议，并默认拒绝私网/保留地址段；端口不限制（允许 1-65535）。具体规则以 `Develop/Application.md` 为准。
-- Admin Token 只能放在 Workers Secrets 或 `.dev.vars`（本地）；禁止写入 Git、D1 或前端代码。
-- Webhook 如启用签名，签名 secret 只能引用 secret（不要落库）。
+Every change must:
+
+- Be small and focused (no "big bang" changes).
+- Pass local checks (if scripts exist):
+  - `pnpm lint`
+  - `pnpm typecheck`
+  - `pnpm test` (if established)
+- Include a new migration for any D1 schema change (never modify existing migrations).
+- Include minimal tests or reproducible steps for behavioral changes.
 
 ---
 
-## 7. 变更说明要求（对我输出时）
+## 6. Security Baseline
 
-请在说明中包含：
+- Monitor targets are controlled SSRF: restrict protocols, deny private/reserved IP ranges by default. Port range 1-65535 is allowed. See `Develop/Application.md` for specifics.
+- Admin Token goes only in Workers Secrets or `.dev.vars` (local). Never in Git, D1, or frontend code.
+- Webhook signing secrets must reference Worker secrets — never store in the database.
 
-- 你做了什么（1–3 行）
-- 为什么这么做（关键约束/风险）
-- 影响到哪些路径/模块（文件路径）
-- 我如何验证（命令或操作步骤）
+---
+
+## 7. Change Description Format
+
+When reporting changes, include:
+
+- **What** you did (1-3 lines)
+- **Why** (key constraints / risks)
+- **Where** (affected file paths / modules)
+- **How to verify** (commands or steps)

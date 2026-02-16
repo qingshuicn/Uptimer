@@ -1,10 +1,12 @@
 # Plan.md: Delivery Plan (Uptimer v0.1+)
 
-本文把 `Application.md` 落地为可执行的开发计划（MVP 优先），并补充 MVP 之后逐步走向“可用产品”的后续阶段（v0.2+）。每阶段都给出验收标准（Definition of Done）。
+Phased delivery plan from MVP to production. Each phase includes acceptance criteria.
+
+> Phases 0–12 are **complete**. See REVIEW.md for remaining gaps.
 
 ---
 
-## 0. 约束与默认决策（不可变更，除非明确说明）
+## 0. Constraints (Locked)
 
 - 平台：Cloudflare Workers + Pages + D1
 - 前端：React + Vite + TypeScript + Tailwind + React Router + TanStack Query + Recharts
@@ -172,7 +174,7 @@
   - admin API 速率限制（Cloudflare 侧规则 + 应用内基础限制）
 - 可观测性：
   - scheduled 每轮结构化日志（数量、耗时、失败原因分布）
-- 上线交付：
+- 发布准备：
   - 文档：README（快速部署、环境变量、迁移步骤）
 
 验收（DoD）：

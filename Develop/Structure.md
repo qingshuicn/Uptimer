@@ -15,14 +15,10 @@
 │  ├─ shared/                   # 共享类型/常量/Zod schema（前后端共用）
 │  └─ db/                       # Drizzle schema 与 DB 访问封装（供 worker 使用）
 ├─ docs/                        # 可选：更多设计文档（如 ADR、运维手册）
-├─ Develop/                     # 开发规格与内部文档归档
-│  ├─ Application.md            # 应用技术规格（已敲定）
-│  ├─ Structure.md              # 本文件
-│  ├─ Plan.md                   # 交付计划
-│  ├─ API-Reference.md          # Cloudflare/D1/API 参考
-│  ├─ LOCAL-TESTING.md          # 本地联调与测试说明
-│  └─ REVIEW.md                 # 历史评审记录
 ├─ .github/workflows/           # CI/CD（Pages + Worker 部署、迁移）
+├─ Application.md               # 应用技术规格（已敲定）
+├─ Structure.md                 # 本文件
+├─ Plan.md                      # 交付计划
 ├─ AGENTS.md                    # 代码助手/协作约定
 └─ UptimeFlare/                 # 参考项目（仅用于查 API/调用方式；不要在此处开发）
 ```
@@ -30,7 +26,7 @@
 说明：
 
 - 本仓库采用 monorepo 结构，便于共享类型与统一依赖。
-- `UptimeFlare/` 仅作为 Cloudflare API/Workers 用法参考；本项目实现应以 `Develop/Application.md` 为准。
+- `UptimeFlare/` 仅作为 Cloudflare API/Workers 用法参考；本项目实现应以 `Application.md` 为准。
 
 ---
 
