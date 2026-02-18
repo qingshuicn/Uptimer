@@ -111,6 +111,7 @@ Admin ─────────►│  Workers (Hono API)                     
 3. 添加以下权限：
    - `Account / Cloudflare Pages / Edit`
    - `Account / D1 / Edit`
+   - `Account / Account Settings / Read`
 4. 复制生成的 Token
 
 ### 第 3 步 — 添加 GitHub Secrets

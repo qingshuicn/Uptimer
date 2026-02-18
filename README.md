@@ -111,6 +111,7 @@ Click the **Fork** button at the top-right of this repository to create your own
 3. Add the following permissions:
    - `Account / Cloudflare Pages / Edit`
    - `Account / D1 / Edit`
+   - `Account / Account Settings / Read`
 4. Copy the generated token
 
 ### Step 3 — Add GitHub Secrets
