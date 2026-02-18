@@ -197,7 +197,7 @@ describe('public/status payload regression', () => {
     ]);
   });
 
-  it('clamps synthetic today uptime to monitor creation time for newly created monitors', async () => {
+  it('starts synthetic today uptime at the first probe for newly created monitors', async () => {
     const dayStart = 1_728_000_000;
     const now = dayStart + 36_600; // 10h 10m into current UTC day
     const newMonitorCreatedAt = now - 600; // created 10m ago
@@ -286,12 +286,189 @@ describe('public/status payload regression', () => {
     expect(today).toBeDefined();
     expect(today).toMatchObject({
       day_start_at: dayStart,
-      total_sec: 600,
+      total_sec: 120,
       downtime_sec: 0,
-      unknown_sec: 480,
+      unknown_sec: 0,
       uptime_sec: 120,
     });
-    expect(today?.uptime_pct).toBeCloseTo(20, 6);
+    expect(today?.uptime_pct).toBeCloseTo(100, 6);
+  });
+
+  it('does not count unknown time before the first probe when monitor has never been checked', async () => {
+    const dayStart = 1_728_000_000;
+    const now = dayStart + 36_600; // 10h 10m into current UTC day
+    const newMonitorCreatedAt = now - 600; // created 10m ago
+
+    const handlers: FakeD1QueryHandler[] = [
+      {
+        match: 'from monitors m',
+        all: () => [
+          {
+            id: 11,
+            name: 'Legacy Monitor',
+            type: 'http',
+            group_name: null,
+            group_sort_order: 0,
+            sort_order: 0,
+            interval_sec: 60,
+            created_at: dayStart - 5 * 86_400,
+            state_status: 'up',
+            last_checked_at: now - 30,
+            last_latency_ms: 50,
+          },
+          {
+            id: 12,
+            name: 'New Monitor',
+            type: 'http',
+            group_name: null,
+            group_sort_order: 0,
+            sort_order: 1,
+            interval_sec: 60,
+            created_at: newMonitorCreatedAt,
+            state_status: 'unknown',
+            last_checked_at: null,
+            last_latency_ms: null,
+          },
+        ],
+      },
+      {
+        match: 'select distinct mwm.monitor_id',
+        all: () => [],
+      },
+      {
+        match: 'select value from settings where key = ?1',
+        first: (args) => (args[0] === 'uptime_rating_level' ? { value: '3' } : null),
+      },
+      {
+        match: 'row_number() over',
+        all: () => [{ monitor_id: 11, checked_at: now - 60, status: 'up', latency_ms: 50 }],
+      },
+      {
+        match: 'from monitor_daily_rollups',
+        all: () => [],
+      },
+      {
+        match: 'select monitor_id, started_at, ended_at',
+        all: () => [],
+      },
+      {
+        match: 'select monitor_id, checked_at, status from check_results',
+        all: () => [],
+      },
+      {
+        match: 'from incidents',
+        all: () => [],
+      },
+      {
+        match: 'from maintenance_windows where starts_at <= ?1 and ends_at > ?1',
+        all: () => [],
+      },
+      {
+        match: 'from maintenance_windows where starts_at > ?1',
+        all: () => [],
+      },
+      {
+        match: 'select key, value from settings',
+        all: () => [{ key: 'site_timezone', value: 'UTC' }],
+      },
+    ];
+
+    const payload = await computePublicStatusPayload(createFakeD1Database(handlers), now);
+    const monitor = payload.monitors.find((m) => m.id === 12);
+    const today = monitor?.uptime_days.at(-1);
+
+    expect(today).toBeDefined();
+    expect(today).toMatchObject({
+      day_start_at: dayStart,
+      total_sec: 0,
+      downtime_sec: 0,
+      unknown_sec: 0,
+      uptime_sec: 0,
+    });
+    expect(today?.uptime_pct).toBeNull();
+  });
+
+  it('keeps existing monitor windows anchored to day start in synthetic today uptime', async () => {
+    const dayStart = 1_728_000_000;
+    const now = dayStart + 600; // 10m into current UTC day
+
+    const handlers: FakeD1QueryHandler[] = [
+      {
+        match: 'from monitors m',
+        all: () => [
+          {
+            id: 12,
+            name: 'Legacy Monitor',
+            type: 'http',
+            group_name: null,
+            group_sort_order: 0,
+            sort_order: 0,
+            interval_sec: 60,
+            created_at: dayStart - 5 * 86_400,
+            state_status: 'up',
+            last_checked_at: now - 30,
+            last_latency_ms: 50,
+          },
+        ],
+      },
+      {
+        match: 'select distinct mwm.monitor_id',
+        all: () => [],
+      },
+      {
+        match: 'select value from settings where key = ?1',
+        first: (args) => (args[0] === 'uptime_rating_level' ? { value: '3' } : null),
+      },
+      {
+        match: 'row_number() over',
+        all: () => [{ monitor_id: 12, checked_at: now - 60, status: 'up', latency_ms: 50 }],
+      },
+      {
+        match: 'from monitor_daily_rollups',
+        all: () => [],
+      },
+      {
+        match: 'select monitor_id, started_at, ended_at',
+        all: () => [{ monitor_id: 12, started_at: dayStart + 120, ended_at: dayStart + 180 }],
+      },
+      {
+        match: 'select monitor_id, checked_at, status from check_results',
+        all: () => [
+          { monitor_id: 12, checked_at: dayStart - 60, status: 'up' },
+          { monitor_id: 12, checked_at: dayStart + 300, status: 'up' },
+        ],
+      },
+      {
+        match: 'from incidents',
+        all: () => [],
+      },
+      {
+        match: 'from maintenance_windows where starts_at <= ?1 and ends_at > ?1',
+        all: () => [],
+      },
+      {
+        match: 'from maintenance_windows where starts_at > ?1',
+        all: () => [],
+      },
+      {
+        match: 'select key, value from settings',
+        all: () => [{ key: 'site_timezone', value: 'UTC' }],
+      },
+    ];
+
+    const payload = await computePublicStatusPayload(createFakeD1Database(handlers), now);
+    const monitor = payload.monitors.find((m) => m.id === 12);
+    const today = monitor?.uptime_days.at(-1);
+
+    expect(today).toBeDefined();
+    expect(today).toMatchObject({
+      day_start_at: dayStart,
+      total_sec: 600,
+      downtime_sec: 60,
+      unknown_sec: 360,
+      uptime_sec: 180,
+    });
+    expect(today?.uptime_pct).toBeCloseTo(30, 6);
   });
 
   it('does not seed synthetic today uptime from checks before monitor creation', async () => {
@@ -493,11 +670,11 @@ describe('public/status payload regression', () => {
     expect(today).toBeDefined();
     expect(today).toMatchObject({
       day_start_at: dayStart,
-      total_sec: 300,
-      downtime_sec: 60,
-      unknown_sec: 30,
+      total_sec: 210,
+      downtime_sec: 0,
+      unknown_sec: 0,
       uptime_sec: 210,
     });
-    expect(today?.uptime_pct).toBeCloseTo(70, 6);
+    expect(today?.uptime_pct).toBeCloseTo(100, 6);
   });
 });

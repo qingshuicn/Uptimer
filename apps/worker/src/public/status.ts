@@ -373,19 +373,28 @@ async function readUptimeRatingLevel(db: D1Database): Promise<1 | 2 | 3 | 4 | 5>
 
 async function computeTodayPartialUptimeBatch(
   db: D1Database,
-  monitors: Array<{ id: number; interval_sec: number; created_at: number }>,
+  monitors: Array<{
+    id: number;
+    interval_sec: number;
+    created_at: number;
+    last_checked_at: number | null;
+  }>,
   rangeStart: number,
   now: number,
 ): Promise<Map<number, UptimeWindowTotals>> {
   const out = new Map<number, UptimeWindowTotals>();
 
-  const monitorById = new Map<number, { id: number; interval_sec: number; created_at: number }>();
+  const monitorById = new Map<
+    number,
+    { id: number; interval_sec: number; created_at: number; last_checked_at: number | null }
+  >();
   for (const monitor of monitors) {
     if (!Number.isFinite(monitor.id)) continue;
     monitorById.set(monitor.id, {
       id: monitor.id,
       interval_sec: monitor.interval_sec,
       created_at: monitor.created_at,
+      last_checked_at: monitor.last_checked_at,
     });
   }
   const ids = [...monitorById.keys()];
@@ -462,7 +471,22 @@ async function computeTodayPartialUptimeBatch(
     if (!monitor) continue;
 
     const monitorRangeStart = Math.max(rangeStart, monitor.created_at);
-    if (now <= monitorRangeStart) {
+    const checks = checksById.get(id) ?? [];
+    const checksSinceMonitorStart =
+      monitorRangeStart > rangeStart
+        ? checks.filter((check) => check.checked_at >= monitorRangeStart)
+        : checks;
+    let effectiveRangeStart: number | null = monitorRangeStart;
+
+    // Only newly created monitors should start their uptime window from the first observed probe.
+    // Existing monitors keep the requested range start so early-window UNKNOWN/DOWN time is preserved.
+    if (monitorRangeStart > rangeStart) {
+      const firstCheckAt = checksSinceMonitorStart[0]?.checked_at;
+      effectiveRangeStart =
+        firstCheckAt ?? (monitor.last_checked_at === null ? null : monitorRangeStart);
+    }
+
+    if (effectiveRangeStart === null || now <= effectiveRangeStart) {
       out.set(id, {
         total_sec: 0,
         downtime_sec: 0,
@@ -473,25 +497,24 @@ async function computeTodayPartialUptimeBatch(
       continue;
     }
 
-    const total_sec = now - monitorRangeStart;
+    const total_sec = now - effectiveRangeStart;
 
     const downtimeIntervals = mergeIntervals(
       (downtimeById.get(id) ?? [])
         .map((it) => ({
-          start: Math.max(it.start, monitorRangeStart),
+          start: Math.max(it.start, effectiveRangeStart),
           end: Math.min(it.end, now),
         }))
         .filter((it) => it.end > it.start),
     );
     const downtime_sec = sumIntervals(downtimeIntervals);
 
-    const checks = checksById.get(id) ?? [];
     const checksForUnknown =
-      monitorRangeStart > rangeStart
-        ? checks.filter((check) => check.checked_at >= monitorRangeStart)
-        : checks;
+      effectiveRangeStart > monitorRangeStart
+        ? checksSinceMonitorStart.filter((check) => check.checked_at >= effectiveRangeStart)
+        : checksSinceMonitorStart;
     const unknownIntervals = buildUnknownIntervals(
-      monitorRangeStart,
+      effectiveRangeStart,
       now,
       monitor.interval_sec,
       checksForUnknown,
@@ -643,6 +666,7 @@ export async function computePublicStatusPayload(
             id: monitor.id,
             interval_sec: monitor.interval_sec,
             created_at: monitor.created_at,
+            last_checked_at: monitor.last_checked_at,
           })),
           Math.max(todayStartAt, rangeStart),
           rangeEnd,

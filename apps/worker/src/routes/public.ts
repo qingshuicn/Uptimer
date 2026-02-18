@@ -796,19 +796,51 @@ publicRoutes.get('/monitors/:id/latency', async (c) => {
 
 type OutageRow = { started_at: number; ended_at: number | null };
 
+function resolveUptimeRangeStart(
+  rangeStart: number,
+  rangeEnd: number,
+  monitorCreatedAt: number,
+  lastCheckedAt: number | null,
+  checks: Array<{ checked_at: number; status: string }>,
+): number | null {
+  const monitorRangeStart = Math.max(rangeStart, monitorCreatedAt);
+  if (rangeEnd <= monitorRangeStart) return null;
+
+  // Start from the first observed probe only for monitors created inside this window.
+  if (monitorRangeStart > rangeStart) {
+    const firstCheckAt = checks.find(
+      (check) => check.checked_at >= monitorRangeStart && check.checked_at < rangeEnd,
+    )?.checked_at;
+    if (firstCheckAt !== undefined) {
+      return firstCheckAt;
+    }
+
+    return lastCheckedAt === null ? null : monitorRangeStart;
+  }
+
+  return monitorRangeStart;
+}
+
 publicRoutes.get('/monitors/:id/uptime', async (c) => {
   const id = z.coerce.number().int().positive().parse(c.req.param('id'));
   const range = uptimeRangeSchema.optional().default('24h').parse(c.req.query('range'));
 
   const monitor = await c.env.DB.prepare(
     `
-      SELECT id, name, interval_sec, created_at
-      FROM monitors
-      WHERE id = ?1 AND is_active = 1
+      SELECT m.id, m.name, m.interval_sec, m.created_at, s.last_checked_at
+      FROM monitors m
+      LEFT JOIN monitor_state s ON s.monitor_id = m.id
+      WHERE m.id = ?1 AND m.is_active = 1
     `,
   )
     .bind(id)
-    .first<{ id: number; name: string; interval_sec: number; created_at: number }>();
+    .first<{
+      id: number;
+      name: string;
+      interval_sec: number;
+      created_at: number;
+      last_checked_at: number | null;
+    }>();
 
   if (!monitor) {
     throw new AppError(404, 'NOT_FOUND', 'Monitor not found');
@@ -818,32 +850,6 @@ publicRoutes.get('/monitors/:id/uptime', async (c) => {
   const rangeEnd = Math.floor(now / 60) * 60;
   const requestedRangeStart = rangeEnd - rangeToSeconds(range);
   const rangeStart = Math.max(requestedRangeStart, monitor.created_at);
-
-  const total_sec = Math.max(0, rangeEnd - rangeStart);
-
-  const { results: outageRows } = await c.env.DB.prepare(
-    `
-      SELECT started_at, ended_at
-      FROM outages
-      WHERE monitor_id = ?1
-        AND started_at < ?2
-        AND (ended_at IS NULL OR ended_at > ?3)
-      ORDER BY started_at
-    `,
-  )
-    .bind(id, rangeEnd, rangeStart)
-    .all<OutageRow>();
-
-  const downtimeIntervals = mergeIntervals(
-    (outageRows ?? [])
-      .map((r) => {
-        const start = Math.max(r.started_at, rangeStart);
-        const end = Math.min(r.ended_at ?? rangeEnd, rangeEnd);
-        return { start, end };
-      })
-      .filter((it) => it.end > it.start),
-  );
-  const downtime_sec = sumIntervals(downtimeIntervals);
 
   const checksStart = rangeStart - monitor.interval_sec * 2;
   const { results: checkRows } = await c.env.DB.prepare(
@@ -859,11 +865,63 @@ publicRoutes.get('/monitors/:id/uptime', async (c) => {
     .bind(id, checksStart, rangeEnd)
     .all<{ checked_at: number; status: string }>();
 
-  const unknownIntervals = buildUnknownIntervals(
+  const checks = (checkRows ?? []).map((r) => ({ checked_at: r.checked_at, status: toCheckStatus(r.status) }));
+  const effectiveRangeStart = resolveUptimeRangeStart(
     rangeStart,
     rangeEnd,
+    monitor.created_at,
+    monitor.last_checked_at,
+    checks,
+  );
+  const rangeStartAt = effectiveRangeStart ?? rangeStart;
+  if (effectiveRangeStart === null || rangeEnd <= effectiveRangeStart) {
+    return c.json({
+      monitor: { id: monitor.id, name: monitor.name },
+      range,
+      range_start_at: rangeStartAt,
+      range_end_at: rangeEnd,
+      total_sec: 0,
+      downtime_sec: 0,
+      unknown_sec: 0,
+      uptime_sec: 0,
+      uptime_pct: 0,
+    });
+  }
+
+  const total_sec = rangeEnd - effectiveRangeStart;
+  const { results: outageRows } = await c.env.DB.prepare(
+    `
+      SELECT started_at, ended_at
+      FROM outages
+      WHERE monitor_id = ?1
+        AND started_at < ?2
+        AND (ended_at IS NULL OR ended_at > ?3)
+      ORDER BY started_at
+    `,
+  )
+    .bind(id, rangeEnd, effectiveRangeStart)
+    .all<OutageRow>();
+
+  const downtimeIntervals = mergeIntervals(
+    (outageRows ?? [])
+      .map((r) => {
+        const start = Math.max(r.started_at, effectiveRangeStart);
+        const end = Math.min(r.ended_at ?? rangeEnd, rangeEnd);
+        return { start, end };
+      })
+      .filter((it) => it.end > it.start),
+  );
+  const downtime_sec = sumIntervals(downtimeIntervals);
+
+  const checksForUnknown =
+    effectiveRangeStart > rangeStart
+      ? checks.filter((check) => check.checked_at >= effectiveRangeStart)
+      : checks;
+  const unknownIntervals = buildUnknownIntervals(
+    effectiveRangeStart,
+    rangeEnd,
     monitor.interval_sec,
-    (checkRows ?? []).map((r) => ({ checked_at: r.checked_at, status: toCheckStatus(r.status) })),
+    checksForUnknown,
   );
 
   // Unknown time is treated as "unavailable" per Application.md; exclude overlap with downtime to avoid double counting.
@@ -879,7 +937,7 @@ publicRoutes.get('/monitors/:id/uptime', async (c) => {
   return c.json({
     monitor: { id: monitor.id, name: monitor.name },
     range,
-    range_start_at: rangeStart,
+    range_start_at: rangeStartAt,
     range_end_at: rangeEnd,
     total_sec,
     downtime_sec,
@@ -893,37 +951,14 @@ async function computePartialUptimeTotals(
   db: D1Database,
   monitorId: number,
   intervalSec: number,
+  createdAt: number,
+  lastCheckedAt: number | null,
   rangeStart: number,
   rangeEnd: number,
 ): Promise<{ total_sec: number; downtime_sec: number; unknown_sec: number; uptime_sec: number }> {
-  const total_sec = Math.max(0, rangeEnd - rangeStart);
-  if (total_sec === 0) {
+  if (rangeEnd <= rangeStart) {
     return { total_sec: 0, downtime_sec: 0, unknown_sec: 0, uptime_sec: 0 };
   }
-
-  const { results: outageRows } = await db
-    .prepare(
-      `
-      SELECT started_at, ended_at
-      FROM outages
-      WHERE monitor_id = ?1
-        AND started_at < ?2
-        AND (ended_at IS NULL OR ended_at > ?3)
-      ORDER BY started_at
-    `,
-    )
-    .bind(monitorId, rangeEnd, rangeStart)
-    .all<{ started_at: number; ended_at: number | null }>();
-
-  const downtimeIntervals = mergeIntervals(
-    (outageRows ?? [])
-      .map((r) => ({
-        start: Math.max(r.started_at, rangeStart),
-        end: Math.min(r.ended_at ?? rangeEnd, rangeEnd),
-      }))
-      .filter((it) => it.end > it.start),
-  );
-  const downtime_sec = sumIntervals(downtimeIntervals);
 
   const checksStart = rangeStart - intervalSec * 2;
   const { results: checkRows } = await db
@@ -940,11 +975,52 @@ async function computePartialUptimeTotals(
     .bind(monitorId, checksStart, rangeEnd)
     .all<{ checked_at: number; status: string }>();
 
-  const unknownIntervals = buildUnknownIntervals(
+  const checks = (checkRows ?? []).map((r) => ({ checked_at: r.checked_at, status: toCheckStatus(r.status) }));
+  const effectiveRangeStart = resolveUptimeRangeStart(
     rangeStart,
     rangeEnd,
+    createdAt,
+    lastCheckedAt,
+    checks,
+  );
+  if (effectiveRangeStart === null || rangeEnd <= effectiveRangeStart) {
+    return { total_sec: 0, downtime_sec: 0, unknown_sec: 0, uptime_sec: 0 };
+  }
+
+  const total_sec = rangeEnd - effectiveRangeStart;
+  const { results: outageRows } = await db
+    .prepare(
+      `
+      SELECT started_at, ended_at
+      FROM outages
+      WHERE monitor_id = ?1
+        AND started_at < ?2
+        AND (ended_at IS NULL OR ended_at > ?3)
+      ORDER BY started_at
+    `,
+    )
+    .bind(monitorId, rangeEnd, effectiveRangeStart)
+    .all<{ started_at: number; ended_at: number | null }>();
+
+  const downtimeIntervals = mergeIntervals(
+    (outageRows ?? [])
+      .map((r) => ({
+        start: Math.max(r.started_at, effectiveRangeStart),
+        end: Math.min(r.ended_at ?? rangeEnd, rangeEnd),
+      }))
+      .filter((it) => it.end > it.start),
+  );
+  const downtime_sec = sumIntervals(downtimeIntervals);
+
+  const checksForUnknown =
+    effectiveRangeStart > rangeStart
+      ? checks.filter((check) => check.checked_at >= effectiveRangeStart)
+      : checks;
+  const unknownIntervals = buildUnknownIntervals(
+    effectiveRangeStart,
+    rangeEnd,
     intervalSec,
-    (checkRows ?? []).map((r) => ({ checked_at: r.checked_at, status: toCheckStatus(r.status) })),
+    checksForUnknown,
   );
   const unknown_sec = Math.max(
     0,
@@ -968,12 +1044,20 @@ publicRoutes.get('/analytics/uptime', async (c) => {
 
   const { results: monitorRows } = await c.env.DB.prepare(
     `
-      SELECT id, name, type, interval_sec
-      FROM monitors
-      WHERE is_active = 1
-      ORDER BY id
+      SELECT m.id, m.name, m.type, m.interval_sec, m.created_at, s.last_checked_at
+      FROM monitors m
+      LEFT JOIN monitor_state s ON s.monitor_id = m.id
+      WHERE m.is_active = 1
+      ORDER BY m.id
     `,
-  ).all<{ id: number; name: string; type: string; interval_sec: number }>();
+  ).all<{
+    id: number;
+    name: string;
+    type: string;
+    interval_sec: number;
+    created_at: number;
+    last_checked_at: number | null;
+  }>();
 
   const monitors = monitorRows ?? [];
 
@@ -1035,6 +1119,8 @@ publicRoutes.get('/analytics/uptime', async (c) => {
               c.env.DB,
               m.id,
               m.interval_sec,
+              m.created_at,
+              m.last_checked_at,
               partialStart,
               partialEnd,
             )
